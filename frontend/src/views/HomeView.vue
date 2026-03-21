@@ -6,7 +6,7 @@
         <h2>Welcome to your Formula 1 data hub</h2>
         <p>
           Query OpenF1 datasets.
-          Start with a session overview, then drill into drivers and cars.
+          Start with a driver overview, then drill into drivers and cars.
         </p>
         <div class="hero-actions">
           <RouterLink to="/drivers">Browse drivers</RouterLink>
@@ -32,27 +32,38 @@
     <section class="panel">
       <header class="panel-header">
         <div>
-          <h3>Session overview</h3>
-          <p class="muted">Fetch drivers for a specific session key.</p>
+          <h3>Driver overview</h3>
+          <p class="muted">Browse drivers by name or number.</p>
         </div>
         <div class="controls">
           <label>
-            Session key
-            <input v-model="overviewSessionKey" type="number" min="0" />
+            Search drivers
+            <input v-model="driverSearch" type="text" placeholder="e.g. Norris or 4" />
           </label>
           <button @click="loadOverview" :disabled="overviewLoading">
-            {{ overviewLoading ? 'Loading...' : 'Load session' }}
+            {{ overviewLoading ? 'Loading...' : 'Refresh drivers' }}
           </button>
         </div>
       </header>
 
       <p v-if="overviewError" class="error">{{ overviewError }}</p>
 
-      <div v-if="overviewDrivers.length" class="driver-grid">
-        <article v-for="driver in highlightedDrivers" :key="driver.driver_number" class="driver-card">
+      <div v-if="filteredDrivers.length" class="driver-grid">
+        <article
+          v-for="driver in highlightedDrivers"
+          :key="driver.driver_number"
+          class="driver-card"
+          @click="setPrimaryDriver(driver)"
+        >
           <header>
-            <span class="driver-number">#{{ driver.driver_number }}</span>
-            <h4>{{ driver.full_name }}</h4>
+            <img v-if="driver.headshot_url" :src="driver.headshot_url" :alt="driver.full_name" />
+            <div>
+              <span class="driver-number">#{{ driver.driver_number }}</span>
+              <h4>{{ driver.full_name }}</h4>
+              <p class="driver-subtitle">
+                {{ driver.first_name }} {{ driver.last_name }}
+              </p>
+            </div>
           </header>
           <dl>
             <div>
@@ -63,16 +74,15 @@
               <dt>Country</dt>
               <dd>{{ driver.country_code || '—' }}</dd>
             </div>
-            <div>
-              <dt>Session</dt>
-              <dd>{{ driver.session_key }}</dd>
-            </div>
           </dl>
         </article>
       </div>
 
+      <p v-else-if="overviewDrivers.length && !overviewLoading" class="muted">
+        No drivers match that search.
+      </p>
       <p v-else-if="!overviewLoading" class="muted">
-        No drivers yet. Enter a session key to populate the grid.
+        No drivers yet. Refresh to load the current driver list.
       </p>
     </section>
 
@@ -85,12 +95,17 @@
           </div>
           <div class="controls">
             <label>
-              Session key
-              <input v-model="speedSessionKey" type="number" min="0" />
-            </label>
-            <label>
-              Driver #
-              <input v-model="speedDriverNumber" type="number" min="1" />
+              Driver
+              <select v-model="speedDriverNumber">
+                <option disabled value="">Select a driver</option>
+                <option
+                  v-for="driver in filteredDrivers"
+                  :key="driver.driver_number"
+                  :value="driver.driver_number"
+                >
+                  #{{ driver.driver_number }} · {{ driver.full_name }}
+                </option>
+              </select>
             </label>
             <button @click="loadSpeedSummary" :disabled="speedLoading">
               {{ speedLoading ? 'Loading...' : 'Update' }}
@@ -119,7 +134,7 @@
           </div>
         </div>
         <p v-else-if="!speedLoading" class="muted">
-          Choose a session and driver to populate this board.
+          Choose a driver to populate this board.
         </p>
       </article>
 
@@ -131,12 +146,17 @@
           </div>
           <div class="controls">
             <label>
-              Session key
-              <input v-model="gearSessionKey" type="number" min="0" />
-            </label>
-            <label>
-              Driver #
-              <input v-model="gearDriverNumber" type="number" min="1" />
+              Driver
+              <select v-model="gearDriverNumber">
+                <option disabled value="">Select a driver</option>
+                <option
+                  v-for="driver in filteredDrivers"
+                  :key="driver.driver_number"
+                  :value="driver.driver_number"
+                >
+                  #{{ driver.driver_number }} · {{ driver.full_name }}
+                </option>
+              </select>
             </label>
             <button @click="loadGearUsageBoard" :disabled="gearLoading">
               {{ gearLoading ? 'Loading...' : 'Update' }}
@@ -164,19 +184,20 @@
 import { RouterLink } from 'vue-router'
 import { computed, onMounted, ref } from 'vue'
 import { fetchDrivers, fetchDriverSpeedSummary, fetchGearUsage } from '../api/openf1'
+import { DEFAULT_SESSION_KEY } from '../config'
 
-const overviewSessionKey = ref('9159')
+const driverSearch = ref('')
 const overviewDrivers = ref([])
 const overviewLoading = ref(false)
 const overviewError = ref('')
 
 const overviewStats = computed(() => {
-  const teamSet = new Set()
-  const countrySet = new Set()
-  overviewDrivers.value.forEach((d) => {
-    if (d.team_name) teamSet.add(d.team_name)
-    if (d.country_code) countrySet.add(d.country_code)
-  })
+    const teamSet = new Set()
+    const countrySet = new Set()
+    overviewDrivers.value.forEach((d) => {
+      if (d.team_name) teamSet.add(d.team_name)
+      if (d.country_code) countrySet.add(d.country_code)
+    })
   return {
     totalDrivers: overviewDrivers.value.length || '—',
     teams: teamSet.size || '—',
@@ -184,16 +205,24 @@ const overviewStats = computed(() => {
   }
 })
 
-const highlightedDrivers = computed(() => overviewDrivers.value.slice(0, 6))
+const filteredDrivers = computed(() => {
+  const query = driverSearch.value.trim().toLowerCase()
+  if (!query) return overviewDrivers.value
+  return overviewDrivers.value.filter((driver) => {
+    const numberMatch = String(driver.driver_number).includes(query)
+    const full = `${driver.full_name} ${driver.first_name} ${driver.last_name}`.toLowerCase()
+    return numberMatch || full.includes(query)
+  })
+})
 
-const speedSessionKey = ref('9159')
-const speedDriverNumber = ref('55')
+const highlightedDrivers = computed(() => filteredDrivers.value.slice(0, 6))
+
+const speedDriverNumber = ref('')
 const speedSummary = ref(null)
 const speedLoading = ref(false)
 const speedError = ref('')
 
-const gearSessionKey = ref('9159')
-const gearDriverNumber = ref('55')
+const gearDriverNumber = ref('')
 const gearUsage = ref([])
 const gearLoading = ref(false)
 const gearError = ref('')
@@ -211,16 +240,29 @@ function guardNumber(value, label) {
   return parsed
 }
 
+function setPrimaryDriver(driver) {
+  if (!driver) return
+  speedDriverNumber.value = String(driver.driver_number)
+  gearDriverNumber.value = String(driver.driver_number)
+  loadSpeedSummary()
+  loadGearUsageBoard()
+}
+
 async function loadOverview() {
   overviewError.value = ''
   overviewLoading.value = true
   overviewDrivers.value = []
   try {
-    const sessionKey = guardNumber(overviewSessionKey.value, 'session key')
-    overviewDrivers.value = await fetchDrivers({ sessionKey })
+    overviewDrivers.value = await fetchDrivers({ sessionKey: DEFAULT_SESSION_KEY })
+    if (!speedDriverNumber.value && overviewDrivers.value.length) {
+      speedDriverNumber.value = String(overviewDrivers.value[0].driver_number)
+    }
+    if (!gearDriverNumber.value && overviewDrivers.value.length) {
+      gearDriverNumber.value = String(overviewDrivers.value[0].driver_number)
+    }
   } catch (err) {
     console.error(err)
-    overviewError.value = err.message || 'Failed to load session'
+    overviewError.value = err.message || 'Failed to load drivers'
   } finally {
     overviewLoading.value = false
   }
@@ -231,9 +273,11 @@ async function loadSpeedSummary() {
   speedSummary.value = null
   try {
     speedLoading.value = true
-    const sessionKey = guardNumber(speedSessionKey.value, 'session key')
     const driverNumber = guardNumber(speedDriverNumber.value, 'driver number')
-    speedSummary.value = await fetchDriverSpeedSummary({ sessionKey, driverNumber })
+    speedSummary.value = await fetchDriverSpeedSummary({
+      sessionKey: DEFAULT_SESSION_KEY,
+      driverNumber,
+    })
   } catch (err) {
     console.error(err)
     speedError.value = err.message || 'Failed to load speed summary'
@@ -247,9 +291,11 @@ async function loadGearUsageBoard() {
   gearUsage.value = []
   try {
     gearLoading.value = true
-    const sessionKey = guardNumber(gearSessionKey.value, 'session key')
     const driverNumber = guardNumber(gearDriverNumber.value, 'driver number')
-    gearUsage.value = await fetchGearUsage({ sessionKey, driverNumber })
+    gearUsage.value = await fetchGearUsage({
+      sessionKey: DEFAULT_SESSION_KEY,
+      driverNumber,
+    })
   } catch (err) {
     console.error(err)
     gearError.value = err.message || 'Failed to load gear usage'
@@ -259,9 +305,10 @@ async function loadGearUsageBoard() {
 }
 
 onMounted(() => {
-  loadOverview()
-  loadSpeedSummary()
-  loadGearUsageBoard()
+  loadOverview().then(() => {
+    loadSpeedSummary()
+    loadGearUsageBoard()
+  })
 })
 </script>
 
@@ -278,8 +325,8 @@ onMounted(() => {
   gap: 1.5rem;
   padding: 1.75rem;
   border-radius: 1rem;
-  border: 1px solid #1f2937;
-  background: linear-gradient(135deg, rgba(14, 165, 233, 0.15), rgba(79, 70, 229, 0.15));
+  border: 1px solid var(--border);
+  background: linear-gradient(135deg, rgba(225, 6, 0, 0.18), rgba(15, 15, 18, 0.9));
 }
 
 .hero-panel h2 {
@@ -289,7 +336,7 @@ onMounted(() => {
 
 .hero-panel p {
   max-width: 580px;
-  color: #cbd5f5;
+  color: var(--muted);
 }
 
 .hero-actions {
@@ -303,14 +350,14 @@ onMounted(() => {
   padding: 0.55rem 1rem;
   border-radius: 9999px;
   font-weight: 600;
-  color: #020617;
-  background: #facc15;
+  color: #fff;
+  background: var(--accent);
 }
 
 .hero-actions .secondary {
   background: transparent;
-  color: #facc15;
-  border: 1px solid rgba(250, 204, 21, 0.5);
+  color: var(--accent);
+  border: 1px solid rgba(225, 6, 0, 0.5);
 }
 
 .hero-stats {
@@ -322,17 +369,17 @@ onMounted(() => {
 }
 
 .hero-stats li {
-  background: rgba(2, 6, 23, 0.75);
+  background: rgba(10, 10, 12, 0.9);
   border-radius: 0.75rem;
   padding: 0.9rem;
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
 }
 
 .hero-stats span {
-  color: #94a3b8;
+  color: var(--muted);
   font-size: 0.85rem;
 }
 
@@ -344,13 +391,13 @@ onMounted(() => {
   text-transform: uppercase;
   letter-spacing: 0.2em;
   font-size: 0.75rem;
-  color: #a5b4fc;
+  color: var(--accent);
 }
 
 .panel {
-  background: rgba(15, 23, 42, 0.95);
+  background: rgba(14, 14, 16, 0.96);
   border-radius: 1rem;
-  border: 1px solid #1f2937;
+  border: 1px solid var(--border);
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.3);
   padding: 1.5rem;
 }
@@ -362,10 +409,10 @@ onMounted(() => {
 }
 
 .panel article {
-  background: rgba(2, 6, 23, 0.5);
+  background: rgba(8, 8, 10, 0.7);
   padding: 1rem;
   border-radius: 0.75rem;
-  border: 1px solid rgba(148, 163, 184, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .panel-header {
@@ -392,24 +439,33 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  color: #94a3b8;
+  color: var(--muted);
 }
 
 .controls input {
-  background: #020617;
-  border: 1px solid #374151;
+  background: var(--bg-0);
+  border: 1px solid var(--border);
   border-radius: 0.5rem;
-  color: #e5e7eb;
+  color: var(--text);
   padding: 0.35rem 0.5rem;
-  width: 7rem;
+  width: 12rem;
+}
+
+.controls select {
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  color: var(--text);
+  padding: 0.35rem 0.5rem;
+  min-width: 12rem;
 }
 
 .controls button {
-  background: #0ea5e9;
+  background: var(--accent);
   border-radius: 9999px;
   border: none;
   padding: 0.45rem 0.95rem;
-  color: #0b1120;
+  color: #fff;
   font-weight: 600;
   cursor: pointer;
 }
@@ -420,12 +476,12 @@ onMounted(() => {
 }
 
 .muted {
-  color: #94a3b8;
+  color: var(--muted);
   font-size: 0.9rem;
 }
 
 .error {
-  color: #f87171;
+  color: var(--accent-2);
   font-size: 0.9rem;
   margin-bottom: 0.5rem;
 }
@@ -439,20 +495,41 @@ onMounted(() => {
 .driver-card {
   border-radius: 0.85rem;
   padding: 0.9rem;
-  background: #020617;
-  border: 1px solid #111827;
+  background: var(--panel-soft);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.driver-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(225, 6, 0, 0.6);
 }
 
 .driver-card header {
   display: flex;
-  align-items: baseline;
-  gap: 0.4rem;
+  align-items: center;
+  gap: 0.6rem;
   margin-bottom: 0.6rem;
 }
 
+.driver-card img {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
 .driver-number {
-  color: #a5b4fc;
+  color: var(--accent);
   font-weight: 700;
+}
+
+.driver-subtitle {
+  margin: 0.1rem 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
 }
 
 .driver-card dl {
@@ -464,7 +541,7 @@ onMounted(() => {
 
 .driver-card dt {
   font-size: 0.75rem;
-  color: #94a3b8;
+  color: var(--muted);
 }
 
 .driver-card dd {
@@ -479,15 +556,15 @@ onMounted(() => {
 }
 
 .stat-grid div {
-  background: #020617;
+  background: var(--panel-soft);
   border-radius: 0.75rem;
-  border: 1px solid #111827;
+  border: 1px solid var(--border);
   padding: 0.85rem;
 }
 
 .stat-grid span {
   display: block;
-  color: #94a3b8;
+  color: var(--muted);
   font-size: 0.8rem;
 }
 
@@ -507,12 +584,12 @@ onMounted(() => {
 .gear-list li {
   display: flex;
   justify-content: space-between;
-  border-bottom: 1px dashed rgba(148, 163, 184, 0.3);
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.12);
   padding-bottom: 0.25rem;
 }
 
 .gear-count {
-  color: #fcd34d;
+  color: var(--accent);
   font-weight: 600;
 }
 

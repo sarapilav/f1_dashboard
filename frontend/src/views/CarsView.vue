@@ -5,17 +5,22 @@
         <div>
           <h2>Telemetry explorer</h2>
           <p class="muted">
-            Supply a session and driver number to pull raw telemetry, speed stats and gear usage.
+            Select a driver to pull raw telemetry, speed stats, and gear usage.
           </p>
         </div>
         <div class="controls">
           <label>
-            Session key
-            <input v-model="filters.sessionKey" type="number" min="0" />
+            Find driver
+            <input v-model="driverSearch" type="text" placeholder="e.g. Leclerc or 16" />
           </label>
           <label>
-            Driver #
-            <input v-model="filters.driverNumber" type="number" min="1" />
+            Driver
+            <select v-model="filters.driverNumber">
+              <option disabled value="">Select a driver</option>
+              <option v-for="driver in filteredDrivers" :key="driver.driver_number" :value="driver.driver_number">
+                #{{ driver.driver_number }} · {{ driver.full_name }}
+              </option>
+            </select>
           </label>
           <label>
             Min speed (km/h)
@@ -26,7 +31,18 @@
           </button>
         </div>
       </header>
+      <div v-if="selectedDriver" class="selected-driver">
+        <img v-if="selectedDriver.headshot_url" :src="selectedDriver.headshot_url" :alt="selectedDriver.full_name" />
+        <div>
+          <strong>#{{ selectedDriver.driver_number }} · {{ selectedDriver.full_name }}</strong>
+          <span>{{ selectedDriver.team_name || 'Team TBD' }}</span>
+        </div>
+      </div>
       <p v-if="formError" class="error">{{ formError }}</p>
+      <p v-if="driversError" class="error">{{ driversError }}</p>
+      <p v-if="drivers.length && !filteredDrivers.length" class="muted">
+        No drivers match that search.
+      </p>
     </section>
 
     <section class="panel split" v-if="!formError">
@@ -35,19 +51,19 @@
         <p v-if="summaryError" class="error">{{ summaryError }}</p>
         <div v-else-if="speedSummary" class="stat-grid">
           <div>
-            <span>Samples</span>
+            <span>Samples </span>
             <strong>{{ speedSummary.samples }}</strong>
           </div>
           <div>
-            <span>Min speed</span>
+            <span>Min speed </span>
             <strong>{{ speedSummary.min.toFixed(1) }} km/h</strong>
           </div>
           <div>
-            <span>Max speed</span>
+            <span>Max speed </span>
             <strong>{{ speedSummary.max.toFixed(1) }} km/h</strong>
           </div>
           <div>
-            <span>Average</span>
+            <span>Average </span>
             <strong>{{ speedSummary.avg.toFixed(1) }} km/h</strong>
           </div>
         </div>
@@ -105,25 +121,29 @@
         </table>
       </div>
       <p v-else-if="!loading" class="muted">
-        No telemetry yet. Enter a session + driver to generate the table.
+        No telemetry yet. Select a driver to generate the table.
       </p>
     </section>
   </div>
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
-import { fetchCarData, fetchDriverSpeedSummary, fetchGearUsage } from '../api/openf1'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { fetchCarData, fetchDriverSpeedSummary, fetchGearUsage, fetchDrivers } from '../api/openf1'
+import { DEFAULT_SESSION_KEY } from '../config'
 
 const filters = reactive({
-  sessionKey: '9159',
-  driverNumber: '55',
+  driverNumber: '',
   minSpeed: '',
 })
 
 const telemetry = ref([])
 const telemetryError = ref('')
 const loading = ref(false)
+
+const drivers = ref([])
+const driverSearch = ref('')
+const driversError = ref('')
 
 const speedSummary = ref(null)
 const summaryError = ref('')
@@ -135,6 +155,18 @@ const formError = ref('')
 
 const previewData = computed(() => telemetry.value.slice(0, 50))
 const sortedGearUsage = computed(() => [...gearUsage.value].sort((a, b) => a.gear - b.gear))
+const selectedDriver = computed(() =>
+  drivers.value.find((driver) => driver.driver_number === Number(filters.driverNumber)),
+)
+const filteredDrivers = computed(() => {
+  const query = driverSearch.value.trim().toLowerCase()
+  if (!query) return drivers.value
+  return drivers.value.filter((driver) => {
+    const numberMatch = String(driver.driver_number).includes(query)
+    const full = `${driver.full_name} ${driver.first_name} ${driver.last_name}`.toLowerCase()
+    return numberMatch || full.includes(query)
+  })
+})
 
 function formatDate(date) {
   if (!date) return '—'
@@ -168,12 +200,11 @@ async function loadTelemetry() {
   gearUsage.value = []
 
   try {
-    const sessionKey = normalizeNumber(filters.sessionKey, 'session key')
     const driverNumber = normalizeNumber(filters.driverNumber, 'driver number')
     const minSpeed =
       filters.minSpeed === '' ? undefined : normalizeNumber(filters.minSpeed, 'min speed', true)
 
-    const params = { sessionKey, driverNumber, minSpeed }
+    const params = { sessionKey: DEFAULT_SESSION_KEY, driverNumber, minSpeed }
     const [raw, summary, gears] = await Promise.all([
       fetchCarData(params),
       fetchDriverSpeedSummary(params),
@@ -202,6 +233,23 @@ async function copyJSON() {
     console.error(err)
   }
 }
+
+async function loadDrivers() {
+  driversError.value = ''
+  try {
+    drivers.value = await fetchDrivers({ sessionKey: DEFAULT_SESSION_KEY })
+    if (!filters.driverNumber && drivers.value.length) {
+      filters.driverNumber = String(drivers.value[0].driver_number)
+    }
+  } catch (err) {
+    console.error(err)
+    driversError.value = err.message || 'Failed to load drivers'
+  }
+}
+
+onMounted(() => {
+  loadDrivers()
+})
 </script>
 
 <style scoped>
@@ -212,9 +260,9 @@ async function copyJSON() {
 }
 
 .panel {
-  background: rgba(15, 23, 42, 0.95);
+  background: rgba(14, 14, 16, 0.96);
   border-radius: 1rem;
-  border: 1px solid #1f2937;
+  border: 1px solid var(--border);
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.3);
   padding: 1.5rem;
 }
@@ -226,10 +274,10 @@ async function copyJSON() {
 }
 
 .panel article {
-  background: rgba(2, 6, 23, 0.5);
+  background: rgba(8, 8, 10, 0.7);
   padding: 1rem;
   border-radius: 0.75rem;
-  border: 1px solid rgba(148, 163, 184, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .panel-header {
@@ -252,25 +300,56 @@ async function copyJSON() {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  color: #94a3b8;
+  color: var(--muted);
 }
 
 .controls input {
-  background: #020617;
-  border: 1px solid #374151;
+  background: var(--bg-0);
+  border: 1px solid var(--border);
   border-radius: 0.5rem;
-  color: #e5e7eb;
+  color: var(--text);
   padding: 0.35rem 0.5rem;
-  width: 7rem;
+  width: 12rem;
+}
+
+.controls select {
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  color: var(--text);
+  padding: 0.35rem 0.5rem;
+  min-width: 12rem;
+}
+
+.selected-driver {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+  color: var(--text);
+}
+
+.selected-driver img {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.selected-driver span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.85rem;
 }
 
 .controls button,
 .panel-header button.small {
-  background: #0ea5e9;
+  background: var(--accent);
   border-radius: 9999px;
   border: none;
   padding: 0.45rem 0.95rem;
-  color: #0b1120;
+  color: #fff;
   font-weight: 600;
   cursor: pointer;
 }
@@ -287,11 +366,11 @@ async function copyJSON() {
 }
 
 .muted {
-  color: #94a3b8;
+  color: var(--muted);
 }
 
 .error {
-  color: #f87171;
+  color: var(--accent-2);
   font-size: 0.9rem;
   margin: 0.2rem 0;
 }
@@ -303,14 +382,14 @@ async function copyJSON() {
 }
 
 .stat-grid div {
-  background: #020617;
+  background: var(--panel-soft);
   border-radius: 0.75rem;
-  border: 1px solid #111827;
+  border: 1px solid var(--border);
   padding: 0.8rem;
 }
 
 .stat-grid span {
-  color: #94a3b8;
+  color: var(--muted);
   font-size: 0.8rem;
 }
 
@@ -330,18 +409,18 @@ async function copyJSON() {
 .gear-list li {
   display: flex;
   justify-content: space-between;
-  border-bottom: 1px dashed rgba(148, 163, 184, 0.3);
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.12);
   padding-bottom: 0.25rem;
 }
 
 .gear-count {
-  color: #fcd34d;
+  color: var(--accent);
   font-weight: 600;
 }
 
 .table-wrapper {
   overflow-x: auto;
-  border: 1px solid #111827;
+  border: 1px solid var(--border);
   border-radius: 0.75rem;
 }
 
@@ -358,14 +437,14 @@ td {
 }
 
 thead {
-  background: rgba(15, 23, 42, 0.8);
+  background: rgba(18, 18, 22, 0.9);
 }
 
 tbody tr:nth-child(even) {
-  background: rgba(2, 6, 23, 0.3);
+  background: rgba(12, 12, 16, 0.4);
 }
 
 tbody tr:nth-child(odd) {
-  background: rgba(15, 23, 42, 0.4);
+  background: rgba(16, 16, 20, 0.5);
 }
 </style>

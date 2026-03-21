@@ -4,12 +4,12 @@
       <div>
         <h2>Driver intelligence</h2>
         <p class="muted">
-          Search for a session, list all drivers, then focus on a specific competitor to reveal speed
-          summaries, gear usage and raw telemetry samples.
+          Browse drivers by name or number, then focus on a specific competitor to reveal speed
+          summaries, gear usage, and raw telemetry samples.
         </p>
       </div>
       <ul class="tips">
-        <li>Try session 9159 for a 2023 race.</li>
+        <li>Type a name or number to filter the driver list.</li>
         <li>You can chain queries quickly from keyboard (Enter must focus button).</li>
         <li>The telemetry preview shows the first five points from /api/car-data/raw.</li>
       </ul>
@@ -20,11 +20,11 @@
         <h2>Drivers</h2>
         <div class="controls">
           <label>
-            Session key:
-            <input v-model="sessionKeyInput" type="number" placeholder="e.g. 9159" />
+            Search
+            <input v-model="driverSearch" type="text" placeholder="e.g. Hamilton or 44" />
           </label>
           <button @click="loadDrivers" :disabled="loadingDrivers">
-            {{ loadingDrivers ? 'Loading...' : 'Load drivers' }}
+            {{ loadingDrivers ? 'Loading...' : 'Refresh drivers' }}
           </button>
         </div>
       </div>
@@ -33,9 +33,9 @@
         {{ driversError }}
       </div>
 
-      <div class="drivers-list" v-if="drivers.length">
+      <div class="drivers-list" v-if="filteredDrivers.length">
         <div
-          v-for="driver in drivers"
+          v-for="driver in filteredDrivers"
           :key="driver.driver_number"
           :class="[
             'driver-card',
@@ -44,8 +44,14 @@
           @click="selectDriver(driver)"
         >
           <div class="driver-header">
-            <span class="driver-number">#{{ driver.driver_number }}</span>
-            <span class="driver-name">{{ driver.full_name }}</span>
+            <img v-if="driver.headshot_url" :src="driver.headshot_url" :alt="driver.full_name" />
+            <div>
+              <span class="driver-number">#{{ driver.driver_number }}</span>
+              <span class="driver-name">{{ driver.full_name }}</span>
+              <span class="driver-subtitle">
+                {{ driver.first_name }} {{ driver.last_name }}
+              </span>
+            </div>
           </div>
           <div class="driver-meta">
             <span class="team-pill" :style="teamColorStyle(driver.team_colour)">
@@ -56,8 +62,11 @@
         </div>
       </div>
 
+      <div v-else-if="drivers.length && !loadingDrivers">
+        <p class="muted">No drivers match that search.</p>
+      </div>
       <div v-else-if="!loadingDrivers">
-        <p class="muted">No drivers loaded yet. Enter a session key and click "Load drivers".</p>
+        <p class="muted">No drivers loaded yet. Refresh to load the current driver list.</p>
       </div>
     </section>
 
@@ -65,8 +74,7 @@
       <div class="panel-header">
         <h2>Driver details</h2>
         <p class="muted">
-          Session {{ currentSessionKey }} · Driver #{{ selectedDriverNumber }}
-          {{ selectedDriverName }}
+          Driver #{{ selectedDriverNumber }} · {{ selectedDriverName }}
         </p>
       </div>
 
@@ -76,6 +84,32 @@
 
       <div class="driver-layout">
         <div class="summary-cards">
+          <div class="card driver-profile" v-if="selectedDriver">
+            <div class="profile-header">
+              <img v-if="selectedDriver.headshot_url" :src="selectedDriver.headshot_url" :alt="selectedDriver.full_name" />
+              <div>
+                <h3>{{ selectedDriver.full_name }}</h3>
+                <p class="muted">
+                  #{{ selectedDriver.driver_number }} · {{ selectedDriver.team_name || 'Team TBD' }}
+                </p>
+              </div>
+            </div>
+            <dl>
+              <div>
+                <dt>First name</dt>
+                <dd>{{ selectedDriver.first_name }}</dd>
+              </div>
+              <div>
+                <dt>Last name</dt>
+                <dd>{{ selectedDriver.last_name }}</dd>
+              </div>
+              <div>
+                <dt>Country</dt>
+                <dd>{{ selectedDriver.country_code || '—' }}</dd>
+              </div>
+            </dl>
+          </div>
+
           <div class="card" v-if="speedSummary">
             <h3>Speed summary</h3>
             <div class="card-grid">
@@ -129,11 +163,11 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { fetchDrivers, fetchDriverSpeedSummary, fetchGearUsage, fetchCarData } from '../api/openf1'
+import { DEFAULT_SESSION_KEY } from '../config'
 
-const sessionKeyInput = ref('')
-const currentSessionKey = ref(null)
+const driverSearch = ref('')
 const drivers = ref([])
 const loadingDrivers = ref(false)
 const driversError = ref('')
@@ -147,6 +181,20 @@ const driverSummaryError = ref('')
 
 const carData = ref([])
 const loadingCarData = ref(false)
+
+const selectedDriver = computed(() =>
+  drivers.value.find((driver) => driver.driver_number === selectedDriverNumber.value),
+)
+
+const filteredDrivers = computed(() => {
+  const query = driverSearch.value.trim().toLowerCase()
+  if (!query) return drivers.value
+  return drivers.value.filter((driver) => {
+    const numberMatch = String(driver.driver_number).includes(query)
+    const full = `${driver.full_name} ${driver.first_name} ${driver.last_name}`.toLowerCase()
+    return numberMatch || full.includes(query)
+  })
+})
 
 const sortedGearUsage = computed(() => [...gearUsage.value].sort((a, b) => a.gear - b.gear))
 
@@ -169,14 +217,10 @@ async function loadDrivers() {
   carData.value = []
 
   try {
-    if (!sessionKeyInput.value) {
-      throw new Error('Please enter a session_key (e.g. 9159).')
+    drivers.value = await fetchDrivers({ sessionKey: DEFAULT_SESSION_KEY })
+    if (!selectedDriverNumber.value && drivers.value.length) {
+      selectDriver(drivers.value[0])
     }
-
-    currentSessionKey.value = Number(sessionKeyInput.value)
-    const data = await fetchDrivers({ sessionKey: currentSessionKey.value })
-
-    drivers.value = data
   } catch (err) {
     console.error(err)
     driversError.value = err.message || 'Failed to load drivers'
@@ -198,7 +242,7 @@ async function loadSpeedSummary() {
   try {
     const summary = await fetchDriverSpeedSummary({
       driverNumber: selectedDriverNumber.value,
-      sessionKey: currentSessionKey.value,
+      sessionKey: DEFAULT_SESSION_KEY,
     })
     speedSummary.value = summary
   } catch (err) {
@@ -213,7 +257,7 @@ async function loadGearUsage() {
   try {
     const data = await fetchGearUsage({
       driverNumber: selectedDriverNumber.value,
-      sessionKey: currentSessionKey.value,
+      sessionKey: DEFAULT_SESSION_KEY,
     })
     gearUsage.value = data
   } catch (err) {
@@ -227,7 +271,7 @@ async function loadCarData() {
   try {
     const data = await fetchCarData({
       driverNumber: selectedDriverNumber.value,
-      sessionKey: currentSessionKey.value,
+      sessionKey: DEFAULT_SESSION_KEY,
     })
     carData.value = data
   } catch (err) {
@@ -236,6 +280,10 @@ async function loadCarData() {
     loadingCarData.value = false
   }
 }
+
+onMounted(() => {
+  loadDrivers()
+})
 </script>
 
 <style scoped>
@@ -260,7 +308,7 @@ async function loadCarData() {
   list-style: none;
   padding: 0;
   margin: 0;
-  color: #94a3b8;
+  color: var(--muted);
   font-size: 0.9rem;
   display: flex;
   flex-direction: column;
@@ -276,14 +324,14 @@ async function loadCarData() {
   content: '•';
   position: absolute;
   left: 0;
-  color: #0ea5e9;
+  color: var(--accent);
 }
 
 .panel {
-  background: rgba(15, 23, 42, 0.9);
+  background: rgba(14, 14, 16, 0.95);
   border-radius: 0.75rem;
   padding: 1rem 1.25rem;
-  border: 1px solid #1f2937;
+  border: 1px solid var(--border);
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.4);
 }
 
@@ -308,20 +356,20 @@ async function loadCarData() {
 }
 
 .controls input {
-  background: #020617;
+  background: var(--bg-0);
   border-radius: 0.5rem;
-  border: 1px solid #374151;
-  color: #e5e7eb;
+  border: 1px solid var(--border);
+  color: var(--text);
   padding: 0.3rem 0.5rem;
   width: 8rem;
 }
 
 .controls button {
-  background: #0ea5e9;
+  background: var(--accent);
   border-radius: 9999px;
   border: none;
   padding: 0.4rem 0.9rem;
-  color: #0b1120;
+  color: #fff;
   font-weight: 500;
   cursor: pointer;
 }
@@ -338,10 +386,10 @@ async function loadCarData() {
 }
 
 .driver-card {
-  background: #020617;
+  background: var(--panel-soft);
   border-radius: 0.75rem;
   padding: 0.6rem 0.75rem;
-  border: 1px solid #1f2937;
+  border: 1px solid var(--border);
   cursor: pointer;
   transition:
     transform 0.1s ease,
@@ -351,27 +399,41 @@ async function loadCarData() {
 
 .driver-card:hover {
   transform: translateY(-1px);
-  border-color: #0ea5e9;
-  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.7);
+  border-color: var(--accent);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
 }
 
 .driver-card--selected {
-  border-color: #22c55e;
+  border-color: var(--accent-2);
 }
 
 .driver-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.5rem;
+}
+
+.driver-header img {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .driver-number {
   font-weight: 700;
-  color: #e5e7eb;
+  color: var(--text);
 }
 
 .driver-name {
   font-size: 0.9rem;
+}
+
+.driver-subtitle {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
 }
 
 .driver-meta {
@@ -386,22 +448,22 @@ async function loadCarData() {
   padding: 0.1rem 0.5rem;
   border-radius: 9999px;
   border: 1px solid transparent;
-  color: #020617;
+  color: #0b0b0d;
   background: #6b7280;
 }
 
 .country-code {
   font-size: 0.75rem;
-  color: #9ca3af;
+  color: var(--muted);
 }
 
 .muted {
-  color: #9ca3af;
+  color: var(--muted);
   font-size: 0.85rem;
 }
 
 .error {
-  color: #f87171;
+  color: var(--accent-2);
   font-size: 0.85rem;
   margin-bottom: 0.5rem;
 }
@@ -419,15 +481,47 @@ async function loadCarData() {
 }
 
 .card {
-  background: #020617;
+  background: var(--panel-soft);
   border-radius: 0.75rem;
   padding: 0.75rem 0.9rem;
-  border: 1px solid #1f2937;
+  border: 1px solid var(--border);
 }
 
 .card h3 {
   margin: 0 0 0.4rem;
   font-size: 0.95rem;
+}
+
+.driver-profile .profile-header {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 0.6rem;
+}
+
+.driver-profile img {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.driver-profile dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.driver-profile dt {
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.driver-profile dd {
+  margin: 0;
+  font-weight: 500;
 }
 
 .card-grid {
@@ -438,16 +532,16 @@ async function loadCarData() {
 }
 
 .metric {
-  background: #020617;
+  background: var(--bg-0);
   border-radius: 0.5rem;
   padding: 0.35rem 0.5rem;
-  border: 1px solid #111827;
+  border: 1px solid var(--border);
 }
 
 .metric-label {
   display: block;
   font-size: 0.7rem;
-  color: #9ca3af;
+  color: var(--muted);
 }
 
 .metric-value {
@@ -466,7 +560,7 @@ async function loadCarData() {
   display: flex;
   justify-content: space-between;
   padding: 0.2rem 0;
-  border-bottom: 1px dashed #1f2937;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.12);
 }
 
 .gear-list li:last-child {
@@ -474,14 +568,14 @@ async function loadCarData() {
 }
 
 .gear-count {
-  color: #a5b4fc;
+  color: var(--accent);
 }
 
 .telemetry-preview {
-  background: #020617;
+  background: var(--bg-0);
   border-radius: 0.5rem;
   padding: 0.5rem;
-  border: 1px solid #111827;
+  border: 1px solid var(--border);
   font-size: 0.7rem;
   max-height: 200px;
   overflow: auto;
