@@ -4,9 +4,7 @@
       <header class="panel-header">
         <div>
           <h2>Telemetry explorer</h2>
-          <p class="muted">
-            Select a driver to pull raw telemetry, speed stats, and gear usage.
-          </p>
+          <p class="muted">Select a driver to pull raw telemetry, speed stats, and gear usage.</p>
         </div>
         <div class="controls">
           <label>
@@ -17,7 +15,11 @@
             Driver
             <select v-model="filters.driverNumber">
               <option disabled value="">Select a driver</option>
-              <option v-for="driver in filteredDrivers" :key="driver.driver_number" :value="driver.driver_number">
+              <option
+                v-for="driver in filteredDrivers"
+                :key="driver.driver_number"
+                :value="driver.driver_number"
+              >
                 #{{ driver.driver_number }} · {{ driver.full_name }}
               </option>
             </select>
@@ -32,7 +34,11 @@
         </div>
       </header>
       <div v-if="selectedDriver" class="selected-driver">
-        <img v-if="selectedDriver.headshot_url" :src="selectedDriver.headshot_url" :alt="selectedDriver.full_name" />
+        <img
+          v-if="selectedDriver.headshot_url"
+          :src="selectedDriver.headshot_url"
+          :alt="selectedDriver.full_name"
+        />
         <div>
           <strong>#{{ selectedDriver.driver_number }} · {{ selectedDriver.full_name }}</strong>
           <span>{{ selectedDriver.team_name || 'Team TBD' }}</span>
@@ -79,7 +85,9 @@
             <span class="gear-count">{{ item.count }}</span>
           </li>
         </ul>
-        <p v-else-if="!loading" class="muted">We will render counts per gear after you fetch data.</p>
+        <p v-else-if="!loading" class="muted">
+          We will render counts per gear after you fetch data.
+        </p>
       </article>
     </section>
 
@@ -94,48 +102,6 @@
         </button>
       </header>
       <TelemetryCharts :telemetry="telemetry" />
-    </section>
-
-    <section class="panel">
-      <header class="panel-header">
-        <div>
-          <h3>Raw car data</h3>
-          <p class="muted">
-            Showing up to {{ previewData.length }} of {{ telemetry.length }} samples for quick review.
-          </p>
-        </div>
-        <button class="small" @click="copyJSON" :disabled="!telemetry.length">
-          Copy JSON
-        </button>
-      </header>
-      <p v-if="telemetryError" class="error">{{ telemetryError }}</p>
-      <div v-else-if="previewData.length" class="table-wrapper">
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Speed</th>
-              <th>Gear</th>
-              <th>RPM</th>
-              <th>Throttle</th>
-              <th>Brake</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="item in previewData" :key="item.date + item.rpm">
-              <td>{{ formatDate(item.date) }}</td>
-              <td>{{ item.speed.toFixed(1) }} km/h</td>
-              <td>{{ item.gear }}</td>
-              <td>{{ item.rpm.toFixed(0) }}</td>
-              <td>{{ (item.throttle * 100).toFixed(0) }}%</td>
-              <td>{{ (item.brake * 100).toFixed(0) }}%</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <p v-else-if="!loading" class="muted">
-        No telemetry yet. Select a driver to generate the table.
-      </p>
     </section>
   </div>
 </template>
@@ -185,7 +151,11 @@ const filteredDrivers = computed(() => {
 function formatDate(date) {
   if (!date) return '—'
   try {
-    return new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    return new Date(date).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    })
   } catch {
     return date
   }
