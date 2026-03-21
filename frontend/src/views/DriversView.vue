@@ -48,9 +48,7 @@
             <div>
               <span class="driver-number">#{{ driver.driver_number }}</span>
               <span class="driver-name">{{ driver.full_name }}</span>
-              <span class="driver-subtitle">
-                {{ driver.first_name }} {{ driver.last_name }}
-              </span>
+              <span class="driver-subtitle"> {{ driver.first_name }} {{ driver.last_name }} </span>
             </div>
           </div>
           <div class="driver-meta">
@@ -73,9 +71,7 @@
     <section class="panel" v-if="selectedDriverNumber">
       <div class="panel-header">
         <h2>Driver details</h2>
-        <p class="muted">
-          Driver #{{ selectedDriverNumber }} · {{ selectedDriverName }}
-        </p>
+        <p class="muted">Driver #{{ selectedDriverNumber }} · {{ selectedDriverName }}</p>
       </div>
 
       <div v-if="driverSummaryError" class="error">
@@ -86,7 +82,11 @@
         <div class="summary-cards">
           <div class="card driver-profile" v-if="selectedDriver">
             <div class="profile-header">
-              <img v-if="selectedDriver.headshot_url" :src="selectedDriver.headshot_url" :alt="selectedDriver.full_name" />
+              <img
+                v-if="selectedDriver.headshot_url"
+                :src="selectedDriver.headshot_url"
+                :alt="selectedDriver.full_name"
+              />
               <div>
                 <h3>{{ selectedDriver.full_name }}</h3>
                 <p class="muted">
@@ -143,19 +143,14 @@
           </div>
         </div>
 
-        <!-- Placeholder for charts later -->
         <div class="card">
-          <h3>Charts placeholder</h3>
-          <p class="muted">
-            Here you can plug in speed vs time, throttle vs time, etc. Data comes from
-            /api/car-data/raw.
-          </p>
-          <button @click="loadCarData" :disabled="loadingCarData">
-            {{ loadingCarData ? 'Loading telemetry...' : 'Fetch raw telemetry' }}
-          </button>
-          <pre v-if="carData.length" class="telemetry-preview">
-            {{ carData.slice(0, 5) }}
-          </pre>
+          <div class="card-header">
+            <h3>Telemetry charts</h3>
+            <button @click="loadCarData" :disabled="loadingCarData">
+              {{ loadingCarData ? 'Loading telemetry...' : 'Fetch raw telemetry' }}
+            </button>
+          </div>
+          <TelemetryCharts :telemetry="carData" />
         </div>
       </div>
     </section>
@@ -166,6 +161,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { fetchDrivers, fetchDriverSpeedSummary, fetchGearUsage, fetchCarData } from '../api/openf1'
 import { DEFAULT_SESSION_KEY } from '../config'
+import TelemetryCharts from '../components/TelemetryCharts.vue'
 
 const driverSearch = ref('')
 const drivers = ref([])
@@ -492,6 +488,33 @@ onMounted(() => {
   font-size: 0.95rem;
 }
 
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.6rem;
+}
+
+.card-header h3 {
+  margin: 0;
+}
+
+.card-header button {
+  background: var(--accent);
+  border-radius: 9999px;
+  border: none;
+  padding: 0.35rem 0.8rem;
+  color: #fff;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.card-header button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .driver-profile .profile-header {
   display: flex;
   gap: 0.75rem;
@@ -569,16 +592,5 @@ onMounted(() => {
 
 .gear-count {
   color: var(--accent);
-}
-
-.telemetry-preview {
-  background: var(--bg-0);
-  border-radius: 0.5rem;
-  padding: 0.5rem;
-  border: 1px solid var(--border);
-  font-size: 0.7rem;
-  max-height: 200px;
-  overflow: auto;
-  margin-top: 0.5rem;
 }
 </style>

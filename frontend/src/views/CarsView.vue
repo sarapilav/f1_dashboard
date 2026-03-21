@@ -86,6 +86,19 @@
     <section class="panel">
       <header class="panel-header">
         <div>
+          <h3>Telemetry charts</h3>
+          <p class="muted">Speed vs time and gear over time.</p>
+        </div>
+        <button class="small" @click="loadTelemetry" :disabled="loading">
+          {{ loading ? 'Loading...' : 'Refresh data' }}
+        </button>
+      </header>
+      <TelemetryCharts :telemetry="telemetry" />
+    </section>
+
+    <section class="panel">
+      <header class="panel-header">
+        <div>
           <h3>Raw car data</h3>
           <p class="muted">
             Showing up to {{ previewData.length }} of {{ telemetry.length }} samples for quick review.
@@ -131,6 +144,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { fetchCarData, fetchDriverSpeedSummary, fetchGearUsage, fetchDrivers } from '../api/openf1'
 import { DEFAULT_SESSION_KEY } from '../config'
+import TelemetryCharts from '../components/TelemetryCharts.vue'
 
 const filters = reactive({
   driverNumber: '',
