@@ -52,3 +52,53 @@ type DriverFilter struct {
 	MeetingKey   *int
 	DriverNumber *int
 }
+
+type Meeting struct {
+	MeetingKey  int    `json:"meeting_key"`
+	MeetingName string `json:"meeting_name"`
+	Location    string `json:"location"`
+	CountryName string `json:"country_name"`
+	Year        int    `json:"year"`
+}
+
+type MeetingFilter struct {
+	MeetingKey  *int
+	Year        *int
+	MeetingName *string
+	Location    *string
+	CountryName *string
+}
+
+type Session struct {
+	SessionKey  int    `json:"session_key"`
+	MeetingKey  int    `json:"meeting_key"`
+	SessionName string `json:"session_name"`
+	SessionType string `json:"session_type"`
+	DateStart   string `json:"date_start"`
+	DateEnd     string `json:"date_end"`
+}
+
+type SessionFilter struct {
+	MeetingKey  *int
+	SessionKey  *int
+	SessionType *string
+	SessionName *string
+}
+
+type SessionResult struct {
+	DNF          bool `json:"dnf"`
+	DNS          bool `json:"dns"`
+	DSQ          bool `json:"dsq"`
+	DriverNumber int  `json:"driver_number"`
+	Duration     any  `json:"duration"`
+	GapToLeader  any  `json:"gap_to_leader"`
+	NumberOfLaps int  `json:"number_of_laps"`
+	MeetingKey   int  `json:"meeting_key"`
+	Position     int  `json:"position"`
+	SessionKey   int  `json:"session_key"`
+}
+
+type SessionResultFilter struct {
+	SessionKey  *int
+	MaxPosition *int
+}

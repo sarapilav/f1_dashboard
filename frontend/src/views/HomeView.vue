@@ -5,8 +5,7 @@
         <p class="eyebrow">Live telemetry explorer</p>
         <h2>Welcome to your Formula 1 data hub</h2>
         <p>
-          Query OpenF1 datasets.
-          Start with a driver overview, then drill into drivers and cars.
+          Query OpenF1 datasets. Start with a driver overview, then drill into drivers and cars.
         </p>
         <div class="hero-actions">
           <RouterLink to="/drivers">Browse drivers</RouterLink>
@@ -60,9 +59,7 @@
             <div>
               <span class="driver-number">#{{ driver.driver_number }}</span>
               <h4>{{ driver.full_name }}</h4>
-              <p class="driver-subtitle">
-                {{ driver.first_name }} {{ driver.last_name }}
-              </p>
+              <p class="driver-subtitle">{{ driver.first_name }} {{ driver.last_name }}</p>
             </div>
           </header>
           <dl>
@@ -133,9 +130,7 @@
             <strong>{{ speedSummary.avg.toFixed(1) }} km/h</strong>
           </div>
         </div>
-        <p v-else-if="!speedLoading" class="muted">
-          Choose a driver to populate this board.
-        </p>
+        <p v-else-if="!speedLoading" class="muted">Choose a driver to populate this board.</p>
       </article>
 
       <article>
@@ -172,18 +167,127 @@
             <span class="gear-count">{{ item.count }}</span>
           </li>
         </ul>
-        <p v-else-if="!gearLoading" class="muted">
-          Fetch data to visualize how each gear is used.
-        </p>
+        <p v-else-if="!gearLoading" class="muted">Fetch data to visualize how each gear is used.</p>
       </article>
+    </section>
+
+    <section class="panel">
+      <header class="panel-header">
+        <div>
+          <h3>Race results</h3>
+          <p class="muted">Pick a year and race to see the final classification.</p>
+        </div>
+        <div class="controls">
+          <label>
+            Year
+            <input v-model="resultsYear" type="number" min="1950" :max="currentYear" />
+          </label>
+          <label>
+            Race
+            <select v-model="selectedMeetingKey">
+              <option disabled value="">Select a race</option>
+              <option
+                v-for="meeting in meetings"
+                :key="meeting.meeting_key"
+                :value="meeting.meeting_key"
+              >
+                {{ meetingLabel(meeting) }}
+              </option>
+            </select>
+          </label>
+          <label>
+            Session
+            <select v-model="selectedSessionKey" :disabled="!sessions.length">
+              <option disabled value="">Select session</option>
+              <option
+                v-for="session in sessions"
+                :key="session.session_key"
+                :value="session.session_key"
+              >
+                {{ sessionLabel(session) }}
+              </option>
+            </select>
+          </label>
+          <label>
+            Top N
+            <input v-model="resultsLimit" type="number" min="1" />
+          </label>
+          <button @click="loadResults" :disabled="resultsLoading || !selectedSessionKey">
+            {{ resultsLoading ? 'Loading...' : 'Load results' }}
+          </button>
+        </div>
+      </header>
+
+      <p v-if="meetingsError" class="error">{{ meetingsError }}</p>
+      <p v-if="sessionsError" class="error">{{ sessionsError }}</p>
+      <p v-if="resultsError" class="error">{{ resultsError }}</p>
+
+      <div v-if="results.length" class="results-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Pos</th>
+              <th>Driver</th>
+              <th>Time / Gap</th>
+              <th>Laps</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in sortedResults" :key="row.position + '-' + row.driver_number">
+              <td>{{ row.position }}</td>
+              <td>
+                <div class="driver-cell">
+                  <img
+                    v-if="driversByNumber[row.driver_number]?.headshot_url"
+                    :src="driversByNumber[row.driver_number].headshot_url"
+                    :alt="driversByNumber[row.driver_number].full_name"
+                  />
+                  <div>
+                    <strong>
+                      #{{ row.driver_number }}
+                      {{ driversByNumber[row.driver_number]?.full_name || '' }}
+                    </strong>
+                    <span class="muted">
+                      {{ driversByNumber[row.driver_number]?.team_name || '' }}
+                    </span>
+                  </div>
+                </div>
+              </td>
+              <td>
+                <div>{{ formatDuration(row.duration) }}</div>
+                <div class="muted">{{ formatGap(row.gap_to_leader) }}</div>
+              </td>
+              <td>{{ row.number_of_laps || '—' }}</td>
+              <td>
+                <span v-if="row.dsq" class="status">DSQ</span>
+                <span v-else-if="row.dns" class="status">DNS</span>
+                <span v-else-if="row.dnf" class="status">DNF</span>
+                <span v-else class="status ok">Finished</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p v-else-if="!resultsLoading" class="muted">
+        Select a year, race, and session to load results.
+      </p>
     </section>
   </div>
 </template>
 
 <script setup>
 import { RouterLink } from 'vue-router'
-import { computed, onMounted, ref } from 'vue'
-import { fetchDrivers, fetchDriverSpeedSummary, fetchGearUsage } from '../api/openf1'
+import { computed, onMounted, ref, watch } from 'vue'
+import {
+  fetchDrivers,
+  fetchDriverSpeedSummary,
+  fetchGearUsage,
+  fetchMeetings,
+  fetchSessions,
+  fetchSessionResults,
+} from '../api/openf1'
 import { DEFAULT_SESSION_KEY } from '../config'
 
 const driverSearch = ref('')
@@ -192,12 +296,12 @@ const overviewLoading = ref(false)
 const overviewError = ref('')
 
 const overviewStats = computed(() => {
-    const teamSet = new Set()
-    const countrySet = new Set()
-    overviewDrivers.value.forEach((d) => {
-      if (d.team_name) teamSet.add(d.team_name)
-      if (d.country_code) countrySet.add(d.country_code)
-    })
+  const teamSet = new Set()
+  const countrySet = new Set()
+  overviewDrivers.value.forEach((d) => {
+    if (d.team_name) teamSet.add(d.team_name)
+    if (d.country_code) countrySet.add(d.country_code)
+  })
   return {
     totalDrivers: overviewDrivers.value.length || '—',
     teams: teamSet.size || '—',
@@ -227,7 +331,24 @@ const gearUsage = ref([])
 const gearLoading = ref(false)
 const gearError = ref('')
 
+const currentYear = new Date().getFullYear()
+const resultsYear = ref(currentYear)
+const meetings = ref([])
+const meetingsLoading = ref(false)
+const meetingsError = ref('')
+const selectedMeetingKey = ref('')
+const sessions = ref([])
+const sessionsLoading = ref(false)
+const sessionsError = ref('')
+const selectedSessionKey = ref('')
+const resultsLimit = ref('20')
+const results = ref([])
+const resultsLoading = ref(false)
+const resultsError = ref('')
+const driversByNumber = ref({})
+
 const sortedGearUsage = computed(() => [...gearUsage.value].sort((a, b) => a.gear - b.gear))
+const sortedResults = computed(() => [...results.value].sort((a, b) => a.position - b.position))
 
 function guardNumber(value, label) {
   if (!value && value !== 0) {
@@ -240,12 +361,149 @@ function guardNumber(value, label) {
   return parsed
 }
 
+function parseYear(value) {
+  if (value === '' || value === null || value === undefined) return null
+  const parsed = Number(value)
+  if (Number.isNaN(parsed)) return null
+  if (String(parsed).length !== 4) return null
+  if (parsed < 1950 || parsed > currentYear) return null
+  return parsed
+}
+
 function setPrimaryDriver(driver) {
   if (!driver) return
   speedDriverNumber.value = String(driver.driver_number)
   gearDriverNumber.value = String(driver.driver_number)
   loadSpeedSummary()
   loadGearUsageBoard()
+}
+
+function meetingLabel(meeting) {
+  if (!meeting) return ''
+  const parts = [meeting.meeting_name, meeting.location, meeting.country_name].filter(Boolean)
+  return parts.join(' · ')
+}
+
+function sessionLabel(session) {
+  if (!session) return ''
+  return session.session_name || session.session_type || `Session ${session.session_key}`
+}
+
+function formatDuration(value) {
+  if (Array.isArray(value)) {
+    return value.map((v) => formatDuration(v)).join(' / ')
+  }
+  if (typeof value === 'number') {
+    const total = Math.max(0, value)
+    const hours = Math.floor(total / 3600)
+    const minutes = Math.floor((total % 3600) / 60)
+    const seconds = Math.floor(total % 60)
+    if (hours > 0) {
+      return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+    }
+    return `${minutes}:${String(seconds).padStart(2, '0')}`
+  }
+  if (value === null || value === undefined || value === '') return '—'
+  return String(value)
+}
+
+function formatGap(value) {
+  if (Array.isArray(value)) {
+    return value.map((v) => formatGap(v)).join(' / ')
+  }
+  if (value === null || value === undefined || value === '') return ''
+  if (typeof value === 'number') return `+${value.toFixed(3)}s`
+  return String(value)
+}
+
+async function loadMeetings() {
+  meetingsLoading.value = true
+  meetingsError.value = ''
+  meetings.value = []
+  selectedMeetingKey.value = ''
+  sessions.value = []
+  selectedSessionKey.value = ''
+  results.value = []
+
+  try {
+    const year = parseYear(resultsYear.value)
+    if (!year) {
+      meetingsError.value = `Year must be a 4-digit number between 1950 and ${currentYear}.`
+      return
+    }
+    meetings.value = await fetchMeetings({ year })
+    if (meetings.value.length) {
+      selectedMeetingKey.value = String(meetings.value[0].meeting_key)
+    }
+  } catch (err) {
+    console.error(err)
+    meetingsError.value = err.message || 'Failed to load meetings'
+  } finally {
+    meetingsLoading.value = false
+  }
+}
+
+async function loadSessions() {
+  sessionsLoading.value = true
+  sessionsError.value = ''
+  sessions.value = []
+  selectedSessionKey.value = ''
+  results.value = []
+
+  try {
+    if (!selectedMeetingKey.value) return
+    const meetingKey = guardNumber(selectedMeetingKey.value, 'meeting key')
+    sessions.value = await fetchSessions({ meetingKey })
+    const raceSession =
+      sessions.value.find((s) =>
+        String(s.session_type || '')
+          .toLowerCase()
+          .includes('race'),
+      ) ||
+      sessions.value.find((s) =>
+        String(s.session_name || '')
+          .toLowerCase()
+          .includes('race'),
+      ) ||
+      sessions.value[0]
+    if (raceSession) {
+      selectedSessionKey.value = String(raceSession.session_key)
+    }
+  } catch (err) {
+    console.error(err)
+    sessionsError.value = err.message || 'Failed to load sessions'
+  } finally {
+    sessionsLoading.value = false
+  }
+}
+
+async function loadResults() {
+  resultsLoading.value = true
+  resultsError.value = ''
+  results.value = []
+  driversByNumber.value = {}
+
+  try {
+    if (!selectedSessionKey.value) return
+    const sessionKey = guardNumber(selectedSessionKey.value, 'session key')
+    const maxPosition = resultsLimit.value ? guardNumber(resultsLimit.value, 'top N') : undefined
+
+    const [sessionResults, drivers] = await Promise.all([
+      fetchSessionResults({ sessionKey, maxPosition }),
+      fetchDrivers({ sessionKey }),
+    ])
+
+    results.value = sessionResults
+    driversByNumber.value = drivers.reduce((acc, driver) => {
+      acc[driver.driver_number] = driver
+      return acc
+    }, {})
+  } catch (err) {
+    console.error(err)
+    resultsError.value = err.message || 'Failed to load results'
+  } finally {
+    resultsLoading.value = false
+  }
 }
 
 async function loadOverview() {
@@ -309,6 +567,29 @@ onMounted(() => {
     loadSpeedSummary()
     loadGearUsageBoard()
   })
+  loadMeetings()
+})
+
+watch(resultsYear, () => {
+  meetingsError.value = ''
+  const year = parseYear(resultsYear.value)
+  if (!year) {
+    meetings.value = []
+    selectedMeetingKey.value = ''
+    sessions.value = []
+    selectedSessionKey.value = ''
+    results.value = []
+    return
+  }
+  loadMeetings()
+})
+
+watch(selectedMeetingKey, () => {
+  loadSessions()
+})
+
+watch(selectedSessionKey, () => {
+  if (selectedSessionKey.value) loadResults()
 })
 </script>
 
@@ -498,7 +779,9 @@ onMounted(() => {
   background: var(--panel-soft);
   border: 1px solid var(--border);
   cursor: pointer;
-  transition: transform 0.15s ease, border-color 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .driver-card:hover {
@@ -591,6 +874,65 @@ onMounted(() => {
 .gear-count {
   color: var(--accent);
   font-weight: 600;
+}
+
+.results-table {
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+.results-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.results-table th,
+.results-table td {
+  padding: 0.6rem 0.8rem;
+  text-align: left;
+}
+
+.results-table thead {
+  background: rgba(18, 18, 22, 0.9);
+}
+
+.results-table tbody tr:nth-child(even) {
+  background: rgba(12, 12, 16, 0.4);
+}
+
+.results-table tbody tr:nth-child(odd) {
+  background: rgba(16, 16, 20, 0.5);
+}
+
+.driver-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.driver-cell img {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.status {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+  background: rgba(225, 6, 0, 0.15);
+  color: var(--accent-2);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.status.ok {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
 }
 
 @media (max-width: 900px) {

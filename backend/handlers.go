@@ -202,6 +202,151 @@ func driversHandler(client *OpenF1Client) http.HandlerFunc {
 	}
 }
 
+func parseMeetingFilter(r *http.Request) (MeetingFilter, error) {
+	q := r.URL.Query()
+	var f MeetingFilter
+
+	if mkStr := q.Get("meeting_key"); mkStr != "" {
+		if mk, err := strconv.Atoi(mkStr); err == nil {
+			f.MeetingKey = &mk
+		} else {
+			return f, err
+		}
+	}
+
+	if yearStr := q.Get("year"); yearStr != "" {
+		if year, err := strconv.Atoi(yearStr); err == nil {
+			f.Year = &year
+		} else {
+			return f, err
+		}
+	}
+
+	if name := q.Get("meeting_name"); name != "" {
+		f.MeetingName = &name
+	}
+	if location := q.Get("location"); location != "" {
+		f.Location = &location
+	}
+	if country := q.Get("country_name"); country != "" {
+		f.CountryName = &country
+	}
+
+	return f, nil
+}
+
+func meetingsHandler(client *OpenF1Client) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		filter, err := parseMeetingFilter(r)
+		if err != nil {
+			http.Error(w, "invalid query parameters: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		meetings, err := client.GetMeetings(r.Context(), filter)
+		if err != nil {
+			http.Error(w, "failed to fetch meetings: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, meetings)
+	}
+}
+
+func parseSessionFilter(r *http.Request) (SessionFilter, error) {
+	q := r.URL.Query()
+	var f SessionFilter
+
+	if mkStr := q.Get("meeting_key"); mkStr != "" {
+		if mk, err := strconv.Atoi(mkStr); err == nil {
+			f.MeetingKey = &mk
+		} else {
+			return f, err
+		}
+	}
+
+	if skStr := q.Get("session_key"); skStr != "" {
+		if sk, err := strconv.Atoi(skStr); err == nil {
+			f.SessionKey = &sk
+		} else {
+			return f, err
+		}
+	}
+
+	if sessionType := q.Get("session_type"); sessionType != "" {
+		f.SessionType = &sessionType
+	}
+	if sessionName := q.Get("session_name"); sessionName != "" {
+		f.SessionName = &sessionName
+	}
+
+	return f, nil
+}
+
+func sessionsHandler(client *OpenF1Client) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		filter, err := parseSessionFilter(r)
+		if err != nil {
+			http.Error(w, "invalid query parameters: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		sessions, err := client.GetSessions(r.Context(), filter)
+		if err != nil {
+			http.Error(w, "failed to fetch sessions: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, sessions)
+	}
+}
+
+func parseSessionResultFilter(r *http.Request) (SessionResultFilter, error) {
+	q := r.URL.Query()
+	var f SessionResultFilter
+
+	if skStr := q.Get("session_key"); skStr != "" {
+		if sk, err := strconv.Atoi(skStr); err == nil {
+			f.SessionKey = &sk
+		} else {
+			return f, err
+		}
+	}
+
+	if mpStr := q.Get("max_position"); mpStr != "" {
+		if mp, err := strconv.Atoi(mpStr); err == nil {
+			f.MaxPosition = &mp
+		} else {
+			return f, err
+		}
+	}
+
+	return f, nil
+}
+
+func sessionResultsHandler(client *OpenF1Client) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		filter, err := parseSessionResultFilter(r)
+		if err != nil {
+			http.Error(w, "invalid query parameters: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		if filter.SessionKey == nil {
+			http.Error(w, "session_key is required", http.StatusBadRequest)
+			return
+		}
+
+		results, err := client.GetSessionResults(r.Context(), filter)
+		if err != nil {
+			http.Error(w, "failed to fetch session results: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, results)
+	}
+}
+
 // GET /api/drivers/speed-summary?driver_number=55&session_key=9159&min_speed=315
 func driverSpeedSummaryHandler(client *OpenF1Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

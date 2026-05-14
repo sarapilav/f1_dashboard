@@ -11,6 +11,9 @@ func NewRouter(client *OpenF1Client) http.Handler {
 
 	mux.Handle("/api/drivers", driversHandler(client))
 	mux.Handle("/api/drivers/speed-summary", driverSpeedSummaryHandler(client))
+	mux.Handle("/api/meetings", meetingsHandler(client))
+	mux.Handle("/api/sessions", sessionsHandler(client))
+	mux.Handle("/api/session-results", sessionResultsHandler(client))
 
 	return withCORS(mux)
 }
