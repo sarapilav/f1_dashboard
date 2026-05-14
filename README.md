@@ -15,19 +15,19 @@ The app focuses on a default OpenF1 session and lets you browse drivers, inspect
 
 ### Home dashboard
 
-![Home dashboard](docs/screenshots/home-dashboard.png)
+![Home dashboard](frontend/docs/screenshots/home-dashboard.png)
 
 ### Driver overview
 
-![Driver overview](docs/screenshots/drivers-overview.png)
+![Driver overview](frontend/docs/screenshots/drivers-overview.png)
 
 ### Driver details
 
-![Driver details](docs/screenshots/driver-details.png)
+![Driver details](frontend/docs/screenshots/driver-details.png)
 
 ### Cars telemetry
 
-![Cars telemetry](docs/screenshots/cars-telemetry.png)
+![Cars telemetry](frontend/docs/screenshots/cars-telemetry.png)
 
 ## Tech stack
 
@@ -47,10 +47,10 @@ The app focuses on a default OpenF1 session and lets you browse drivers, inspect
 
 ## Setup
 
-Run the backend first. From this `frontend` directory:
+Run the backend first from the repository root:
 
 ```sh
-cd ../backend
+cd backend
 go run .
 ```
 
@@ -60,10 +60,10 @@ The backend listens on:
 http://localhost:8080
 ```
 
-In another terminal, install and run the frontend:
+In another terminal, install and run the frontend from the repository root:
 
 ```sh
-cd ../frontend
+cd frontend
 npm install
 npm run dev
 ```
@@ -93,6 +93,8 @@ VITE_DEFAULT_SESSION_KEY=9159
 ```
 
 ## Available scripts
+
+Run these commands from the `frontend` directory:
 
 ```sh
 npm run dev
